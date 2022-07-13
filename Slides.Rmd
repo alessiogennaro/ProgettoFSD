@@ -906,20 +906,8 @@ word_cor %>%
   theme_void()
 ```
 
+## References
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+* [Questo tutorial](https://tm4ss.github.io/docs/Tutorial_1_Web_scraping.html) di Andreas Niekler e Gregor Wiedemann.
+* [Il libro di testo](https://www.tidytextmining.com/index.html).
 
