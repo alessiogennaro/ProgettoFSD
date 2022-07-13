@@ -1,0 +1,925 @@
+---
+title: "Text mining di alcuni articoli sulla guerra Russia-Ucraina"
+author: "Alessio Pio Gennaro"
+date: '2022-05-23'
+output:
+  ioslides_presentation:
+    css: ./style.css
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+******
+Questa prima parte copre un aspetto molto importante dell'analisi, ovvero il processo di estrazione di testo da pagine web o documenti. Di solito è chiamato *Crawling* l'insieme di tecniche per il download automatico di pagine web.
+
+Il processo di estrazione di dati testuali o metadati prende il nome di *Scraping*. Utilizziamo il package `rvest` con il supporto di [phantomJS](https://phantomjs.org/)
+
+```{r}
+# install.packages("rvest")
+# install.packages("webdriver")
+
+options(stringsAsFactors = F)
+
+library(dplyr)
+library(ggraph)
+library(ggplot2)
+library(igraph)
+library(lubridate)
+library(tidyr)
+library(tidytext)
+library(webdriver)
+library(readr)
+library(rvest)
+library(stringr)
+library(wordcloud)
+library(widyr)
+
+# install_phantomjs()
+
+require(webdriver)
+
+pjs_instance <- run_phantomjs("ERROR")
+pjs_session <- Session$new(port = pjs_instance$port)
+
+replace_na <- function(string) {
+  if (is.na(string)) {
+    return("")
+  }
+  return(string)
+}
+
+```
+
+## Downloading articles about the Russia-Ucraine war
+
+Siamo interessati agli articoli recenti che riguardano il conflitto Russia-Ucraina.
+
+```{r eval=FALSE}
+page_numbers <- 1:9
+base_url <- "https://www.theguardian.com/world/ukraine?page="
+paging_urls <- paste0(base_url, page_numbers)
+
+head(paging_urls, 3)
+
+all_links <- NULL
+
+for (url in paging_urls) {
+  # download e parsing di una singola pagina web
+  pjs_session$go(url)
+  rendered_source <- pjs_session$getSource()
+  html_document <- read_html(rendered_source)
+  
+  # parsing ed estrazione dei link
+  links <- html_document %>% 
+    html_elements(xpath = "//div[contains(@class, 'fc-item')]/a") %>% 
+    html_attr(name = "href")
+  
+  all_links <- c(all_links, links)
+}
+
+head(all_links, 10)
+length(all_links)
+
+```
+
+```{r eval=FALSE}
+all_articles <- scrape_all_guardian_articles(all_links)
+all_articles
+
+write_csv2(all_articles, "./data/ukraine_guardian.csv")
+```
+
+```{r eval=FALSE}
+all_articles <- read_csv2("data/ukraine_guardian.csv")
+
+all_articles
+```
+
+******
+```{r eval=FALSE}
+page_numbers <- 1:20
+base_url <- "https://www.latimes.com/search?q=Ukraine&p="
+paging_urls <- paste0(base_url, page_numbers)
+
+head(paging_urls, 3)
+
+all_links <- NULL
+
+for (url in paging_urls) {
+  # download e parsing di una singola pagina web
+  pjs_session$go(url)
+  rendered_source <- pjs_session$getSource()
+  html_document <- read_html(rendered_source)
+  
+  # parsing ed estrazione dei link
+  links <- html_document %>% 
+    html_elements(xpath = "//h3[contains(@class, 'promo-title')]//a") %>%
+    html_attr(name = "href")
+  
+  all_links <- c(all_links, links)
+}
+
+head(all_links, 10)
+length(all_links)
+
+```
+
+```{r eval=FALSE}
+all_articles <- scrape_all_la_times_articles(all_links)
+all_articles
+
+write_csv2(all_articles, "./data/ukraine_la_times.csv")
+```
+
+```{r eval=FALSE}
+all_articles <- read_csv2("data/ukraine_la_times.csv")
+
+all_articles
+```
+
+******
+```{r eval=FALSE}
+page_numbers <- 1:35
+# page_numbers <- 1:10
+base_url <- "https://www.bbc.co.uk/search?q=Ukraine&page="
+paging_urls <- paste0(base_url, page_numbers)
+
+head(paging_urls, 3)
+
+all_links <- NULL
+
+for (url in paging_urls) {
+  # download e parsing di una singola pagina web
+  pjs_session$go(url)
+  rendered_source <- pjs_session$getSource()
+  html_document <- read_html(rendered_source)
+  
+  # parsing ed estrazione dei link
+  links <- html_document %>% 
+    html_elements(xpath = "//a[contains(@class, 'ssrcss-1ynlzyd-PromoLink')]") %>%
+    html_attr(name = "href")
+
+  all_links <- c(all_links, links)
+}
+
+# rimuoviamo i link agli articoli che non ci interessano
+all_links <- purrr::discard(all_links, function(x) {str_detect(x, "(programmes)|(sport)")})
+
+head(all_links, 10)
+length(all_links)
+
+```
+
+```{r eval=FALSE}
+all_articles <- scrape_all_bbc_articles(all_links)
+all_articles
+
+write_csv2(all_articles, "./data/ukraine_bbc.csv")
+```
+
+```{r eval=FALSE}
+all_articles <- read_csv2("./data/ukraine_bbc.csv")
+
+all_articles
+```
+
+******
+```{r eval=FALSE}
+page_numbers <- 1:23
+begin_url <- "https://www.newyorker.com/search/q/Ukraine/page/"
+end_url <- "/n,w"
+paging_urls <- paste0(begin_url, page_numbers, end_url)
+
+head(paging_urls, 3)
+
+all_links <- NULL
+
+for (url in paging_urls) {
+  # download e parsing di una singola pagina web
+  pjs_session$go(url)
+  rendered_source <- pjs_session$getSource()
+  html_document <- read_html(rendered_source)
+  
+  # parsing ed estrazione dei link
+  links <- html_document %>% 
+    html_elements(xpath = "//div[contains(@class, 'River__riverItemContent___2hXMG')]/a[2]") %>% 
+    html_attr(name = "href")
+    
+  all_links <- c(all_links, links)
+}
+
+# rimuoviamo i link agli articoli che non ci interessano
+all_links <- purrr::discard(all_links, function(x) {str_detect(x, "(podcast)|(humor)|(cartoons)|(sports)")})
+
+head(all_links, 10)
+length(all_links)
+```
+
+```{r eval=FALSE}
+all_articles <- scrape_all_new_yorker_articles(all_links)
+all_articles
+
+write_csv2(all_articles, "data/ukraine_new_yorker.csv")
+```
+
+```{r eval=FALSE}
+all_articles <- read_csv2("data/ukraine_new_yorker.csv")
+
+all_articles
+```
+
+## Let's start the analysis
+
+Adesso che abbiamo tutti gli articoli possiamo proseguire e dare inizio all'analisi vera e propria. L'analisi rispecchierà quanto già visto a lezione riguardo il text-mining.
+
+## Pre-processing
+
+```{r}
+guardian <- read_csv2("data/ukraine_guardian.csv")
+
+guardian <- guardian %>% 
+  filter(!is.na(title), !is.na(date), !str_detect(body, "NA")) %>% 
+  mutate(source = "Guardian") %>% 
+  select(source, everything())
+
+la_times <- read_csv2("data/ukraine_la_times.csv")
+
+la_times <- la_times %>% 
+  filter(!is.na(body))  %>% 
+  mutate(source = "LA Times") %>% 
+  select(source, everything())
+
+bbc <- read_csv2("data/ukraine_bbc.csv")
+
+bbc <- bbc %>% 
+  filter(!is.na(title), !is.na(date), !str_detect(body, "NA")) %>% 
+  mutate(source = "BBC") %>% 
+  select(source, everything())
+
+nyorker <- read_csv2("data/ukraine_new_yorker.csv")
+
+nyorker <- nyorker %>% 
+  filter(!is.na(date)) %>% 
+  mutate(source = "New Yorker") %>% 
+  select(source, everything())
+
+all_articles <- guardian %>% 
+  bind_rows(la_times) %>% 
+  bind_rows(bbc) %>% 
+  bind_rows(nyorker)
+
+write_csv2(all_articles, "data/all_ukraine_articles.csv")
+
+```
+
+```{r}
+all_articles <- read_csv2("./data/all_ukraine_articles.csv")
+```
+
+## Tidying
+
+Una volta scaricati tutti gli articoli che ci interessano, siamo pronti ad eseguire l'analisi vera e propria. La prima cosa da fare è usare `unnest_tokens()` per dividere il testo in parole. Rimuoviamo anche le stop words.
+
+```{r}
+tidy_articles <- all_articles %>% 
+  unnest_tokens(word, body)
+tidy_articles
+
+tidy_articles <- tidy_articles %>% 
+  anti_join(stop_words)
+
+tidy_articles %>% 
+  count(word, sort = TRUE)
+```
+
+Vediamo subito le parole più frequenti.
+
+```{r}
+tidy_articles %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n > 700) %>% 
+  mutate(word = reorder(word, n)) %>% 
+  ggplot(aes(word, n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip()
+```
+
+```{r}
+tidy_articles %>% 
+  count(word) %>% 
+  with(wordcloud(word, n, max.words = 100))
+```
+
+```{r echo=FALSE}
+all_articles <- read_csv2("./data/all_ukraine_articles.csv")
+```
+
+## Sentiment analysis
+
+Quando un umano legge un qualunque testo vi associa un sentimento, che viene ricavato dal significato delle parole lette. Non sempre il testo suscita emozioni positive o negative, possono anche esistere parti meno espressive. Useremo i tre *lexicon* già visti a lezione.
+
+```{r eval=FALSE}
+get_sentiments("afinn") # da -5 a +5
+
+```
+
+```{r eval=FALSE}
+get_sentiments("bing") # positive e negative
+
+```
+
+```{r eval=FALSE}
+get_sentiments("nrc") # positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise e trust
+
+```
+
+******
+Quali sono le parole positive compaiono di più? E per quelle negative?
+
+```{r}
+tidy_articles <- all_articles %>% 
+  unnest_tokens(word, body)
+
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+tidy_articles %>% 
+  inner_join(nrc_joy) %>% 
+  count(word, sort = TRUE)
+
+```
+
+```{r}
+nrc_sadness <- get_sentiments("nrc") %>% 
+  filter(sentiment == "sadness")
+
+tidy_articles %>% 
+  inner_join(nrc_sadness) %>% 
+  count(word, sort = TRUE)
+```
+
+Il sentimento di paura pervade gli articoli. La parola "guerra" compare più di 2500 volte.
+
+```{r}
+nrc_fear <- get_sentiments("nrc") %>% 
+  filter(sentiment == "fear")
+
+tidy_articles %>% 
+  inner_join(nrc_fear) %>% 
+  count(word, sort = TRUE)
+```
+
+******
+Per ogni fonte, analizziamo il giorno con più articoli.
+
+```{r}
+tidy_articles_sentiment <- all_articles %>% 
+  group_by(source) %>% 
+  count(source, date, sort = TRUE) %>% 
+  top_n(1) %>% 
+  semi_join(all_articles, .) %>% 
+  ungroup() %>% 
+  unnest_tokens(word, body) %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(source, date, sentiment) %>% 
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+
+tidy_articles_sentiment
+
+```
+
+```{r}
+ggplot(tidy_articles_sentiment, aes(date, sentiment, fill = source)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~source, ncol = 2, scales = "free_x")
+
+```
+
+******
+Adesso confrontiamo i vari lexicon tra di loro. Utilizziamo solamente gli articoli della BBC.
+
+```{r}
+tidy_BBC <- tidy_articles %>% 
+  filter(source == "BBC")
+tidy_BBC
+
+```
+
+```{r}
+afinn <- tidy_BBC %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  # raggruppiamo per giorno
+  group_by(date) %>%
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  tidy_BBC %>% 
+    inner_join(get_sentiments("bing")) %>% 
+    mutate(method = "Bing"),
+  tidy_BBC %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", "negative"))
+    ) %>% 
+    mutate(method = "NRC")
+  ) %>% 
+  count(method, date, sentiment) %>% 
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+bing_and_nrc
+
+```
+
+```{r}
+bind_rows(afinn, bing_and_nrc) %>% 
+  ggplot(aes(date, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+```
+
+Come si nota, tutti e tre i lexicon seguono più o meno lo stesso pattern. I giorni più negativi sono stati il 23 maggio e il 3 giugno, mentre invece il giorno più positivo è stato il 5 giugno.
+
+******
+Adesso possiamo prendere in considerazione le parole che hanno influito di più positivamente e negativamente.
+
+```{r}
+bing_word_counts <- tidy_articles %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(word, sentiment, sort = TRUE) %>% 
+  ungroup()
+
+bing_word_counts
+
+```
+
+Vediamo il bar plot.
+
+```{r}
+bing_word_counts %>% 
+  group_by(sentiment) %>% 
+  slice_max(n, n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder(word, n)) %>% 
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment (frequency)",
+       y = NULL)
+
+```
+
+Visti i tanti significati della parola like, è meglio escluderla dall'analisi.
+
+```{r}
+custom_stop_words <- bind_rows(tibble(word = c("like"),
+                                      lexicon = c("project")),
+                               stop_words)
+
+bing_word_counts <- bing_word_counts %>% 
+  anti_join(custom_stop_words)
+
+bing_word_counts %>% 
+  group_by(sentiment) %>% 
+  slice_max(n, n = 10) %>% 
+  ungroup() %>% 
+  mutate(word = reorder(word, n)) %>% 
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+
+## Word-cloud
+
+Vediamo un word cloud in cui abbiamo diviso le parole in base al sentiment a loro associato.
+
+```{r}
+library(reshape2)
+
+tidy_articles %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(word, sentiment, sort = TRUE) %>% 
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>% 
+  comparison.cloud(colors = c("gray40", "gray80"),
+                   max.words = 100)
+  
+```
+
+## TF-IDF
+
+La prossima misura che andremo ad analizzare è TF-IDF.
+
+```{r}
+articles_words <- all_articles %>% 
+  unnest_tokens(word, body) %>% 
+  count(source, word, sort = TRUE)
+
+# numero totale di parole per ogni sorgente
+total_words <- articles_words %>% 
+  group_by(source) %>% 
+  summarise(total = sum(n))
+
+articles_words <- left_join(articles_words, total_words)
+
+articles_words
+
+```
+
+```{r}
+ggplot(articles_words, aes(n/total, fill = source)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~source, ncol = 2, scales = "free_y")
+
+```
+
+Come si nota facilmente, abbiamo tante parole che si incontrano molto raramente (la coda lunga) e un numero limitato di parole che si leggono molto spesso.
+
+## Zipf law
+
+La legge di Zipf studia il rapporto tra il rango e la frequenza delle parole di un testo. In particolare:
+
+> La legge di Zipf afferma che la frequenza di apparizione di una parola è inversamente proporzionale al suo rango.
+
+Dove per rango si intende la posizione che la parola occupa in una classificazione delle parole basata sulla frequenza.
+La legge di Zipf ha una distribuzione Power-Law.
+
+$$p_k = \alpha k^{-1}$$
+
+$$p_k$$ è la frequenza della parola. $$k$$, invece, rappresenta il rango. $$\alpha$$ è una costante.
+
+```{r}
+freq_by_rank <- articles_words %>% 
+  group_by(source) %>% 
+  mutate(rank = row_number(),
+         `term frequency` = n/total)
+
+freq_by_rank
+
+```
+
+```{r}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, group = source, color = source)) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) +
+  scale_x_log10() +
+  scale_y_log10()
+
+```
+
+******
+La porzione di rango che va da 100 a 1000 sembra costante. Analizziamo questa sezione.
+
+```{r}
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 1000,
+         rank > 100)
+
+mod = lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+mod
+
+```
+
+```{r}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = source)) + 
+  geom_abline(intercept = mod$coefficients[1], 
+              slope = mod$coefficients[2], 
+              color = "gray50", 
+              linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+```
+
+******
+Torniamo ad analizzare TF-IDF.
+
+```{r}
+articles_tf_idf <- articles_words %>% 
+  bind_tf_idf(word, source, n)
+
+articles_tf_idf
+
+articles_tf_idf %>% 
+  select(-total) %>% 
+  arrange(desc(tf_idf))
+
+```
+
+```{r}
+articles_tf_idf %>% 
+  group_by(source) %>% 
+  slice_max(tf_idf, n = 15) %>% 
+  ungroup() %>% 
+  ggplot(aes(tf_idf, reorder(word, tf_idf), fill = source)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~source, ncol = 2, scales = "free") +
+  labs(x = "TF-IDF", y = NULL)
+
+```
+
+## Bigram analysis
+
+Come già fatto a lezione, procediamo ad analizzare i bigrammi, cioè gruppi di due parole consecutive. Come vedremo, i bigrammi ci torneranno particolarmente utili nella sentiment analysis, in quanto permettono di identificare le negazioni nel testo.
+
+```{r}
+articles_bigrams <- all_articles %>% 
+  unnest_tokens(bigram, body, token = "ngrams", n = 2)
+
+articles_bigrams
+
+```
+
+```{r}
+articles_bigrams %>% 
+  count(bigram, sort = TRUE)
+
+```
+
+Rimuoviamo le stop words.
+
+```{r}
+bigrams_separated <- articles_bigrams %>% 
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>% 
+  filter(!word1 %in% stop_words$word) %>% 
+  filter(!word2 %in% stop_words$word)
+
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigram_counts
+
+```
+
+```{r}
+bigrams_united <- bigrams_filtered %>% 
+  unite(bigram, word1, word2, sep = " ")
+
+bigrams_united
+
+```
+
+## Uno sguardo ai trigrammi
+
+Possiamo anche dare uno sguardo a come volge l'analisi nel caso in cui si considerano trigrammi.
+
+```{r}
+all_articles %>% 
+  unnest_tokens(trigram, body, token = "ngrams", n = 3) %>% 
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>% 
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!word3 %in% stop_words$word) %>% 
+  count(word1, word2, word3, sort = TRUE)
+
+```
+
+```{r}
+bigrams_filtered %>% 
+  filter(word1 == "zelensky") %>% 
+  count(source, word2, sort = TRUE)
+
+```
+
+Diamo un'occhiata a TF-IDF, considerando un bigramma come fosse una parola.
+
+```{r}
+bigram_tf_idf <- bigrams_united %>% 
+  count(source, bigram) %>% 
+  bind_tf_idf(bigram, source, n) %>% 
+  arrange(desc(tf_idf))
+
+bigram_tf_idf %>% 
+  group_by(source) %>% 
+  slice_max(tf_idf, n = 10) %>% 
+  ungroup() %>% 
+  ggplot(aes(tf_idf, reorder(bigram, tf_idf), fill = source)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~source, ncol = 2, scales = "free") +
+  labs(x = "TF-IDF", y = NULL)
+
+```
+
+## Bigram sentiment analysis
+
+```{r}
+bigrams_separated %>% 
+  filter(word1 == "not") %>% 
+  count(word1, word2, sort = TRUE)
+
+```
+
+```{r}
+not_words <- bigrams_separated %>% 
+  filter(word1 == "not") %>% 
+  inner_join(get_sentiments("afinn"), by = c(word2 = "word")) %>% 
+  count(word2, value, sort = TRUE)
+
+not_words
+
+```
+
+```{r}
+not_words %>% 
+  mutate(contribution = n * value) %>% 
+  arrange(desc(abs(contribution))) %>% 
+  head(20) %>% 
+  mutate(word2 = reorder(word2, contribution)) %>% 
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * num of occurrences",
+       y = "Words preceded by \"not\"")
+
+```
+
+## Negative words
+
+```{r}
+negation_words <- c("no", "not", "none", "noone", "nobody", "nothing", "neither", "nowhere", "never", "without")
+
+negated_words <- bigrams_separated %>% 
+  filter(word1 %in% negation_words) %>% 
+  inner_join(get_sentiments("afinn"), by = c(word2 = "word")) %>% 
+  count(word1, word2, value, sort = TRUE)
+
+negated_words %>% 
+  group_by(word1) %>% 
+  count() %>% 
+  filter(n >= 10) %>% 
+  semi_join(negated_words, ., by = "word1") %>%
+  ungroup() %>%
+  mutate(contribution = n * value) %>% 
+  arrange(desc(abs(contribution))) %>% 
+  group_by(word1) %>% 
+  top_n(contribution, n = 10) %>% 
+  ungroup() %>% 
+  mutate(word2 = reorder(word2, contribution)) %>% 
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~word1, ncol = 2, scales = "free_y") +
+  labs(x = "Sentiment value * num of occurrences",
+       y = "Words preceded by a negation")
+
+```
+
+## Graph representation
+
+Possiamo utilizzare la libreria [ggraph](https://www.github.com/thomasp85/ggraph) (e il pacchetto [igraph](https://www.igraph.org/)) per visualizzare le relazioni tra coppie di parole.
+
+```{r}
+# teniamo solamente le coppie più comuni
+bigram_graph <- bigram_counts %>% 
+  filter(n >= 40) %>% 
+  graph_from_data_frame()
+
+bigram_graph
+
+```
+
+```{r}
+set.seed(927)
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+```
+
+Nel grafo si possono notare tante coppie di parole separate tra di loro (come nuclear - weapons, front - line, black - sea, etc.) e una grossa componente connessa.
+Parole come "ukrainian", "russian", "city" e "war" rappresentano centri comuni e vanno in coppia con tantissime altre parole.
+
+Segue un'altra visualizzazione del grafo.
+
+```{r}
+set.seed(927)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+```
+
+## Co-occurrencies and other statistics
+
+Usiamo il package [widyr](https://github.com/dgrtwo/widyr) per esplorare le co-occorrenze che avvengono tra documenti o parti di questi.
+
+```{r}
+all_articles_words <- all_articles %>%
+  filter(source == "BBC") %>% 
+  # gruppi di dieci articoli
+  mutate(group = row_number() %/% 10) %>% 
+  unnest_tokens(word, body) %>% 
+  filter(!word %in% stop_words$word)
+
+all_articles_words
+
+```
+
+```{r}
+word_pairs <- all_articles_words %>% 
+  pairwise_count(word, group, sort = TRUE)
+
+word_pairs
+
+```
+
+******
+Adesso prendiamo in considerazione la **correlazione** tra parole, che indica quanto spesso due parole appaiono insieme rispetto a quanto appaiono separate.
+
+Il coefficiente phi indica quanto è probabile che le due parole (X e Y) appaiano insieme (o non appaiano insieme) rispetto a quanto una compaia senza l'altra.
+
+|  | Y appare | Y non appare | Totale |  |
+|------------|---------------|---------------|--------------|---|
+| X appare | $n_{11}$ | $n_{10}$ | $n_{1\cdot}$ |  |
+| X non appare | $n_{01}$ | $n_{00}$ | $n_{0\cdot}$ |  |
+| Totale | $n_{\cdot 1}$ | $n_{\cdot 0}$ | $n$ |  |
+
+$$\phi=\frac{n_{11}n_{00}-n_{10}n_{01}}{\sqrt{n_{1\cdot}n_{0\cdot}n_{\cdot0}n_{\cdot1}}}$$
+
+```{r}
+word_cor <- all_articles_words %>% 
+  group_by(word) %>% 
+  filter(n() >= 40) %>% 
+  pairwise_cor(word, group, sort = TRUE)
+
+word_cor
+
+```
+
+Le parole più correlate a "weapons"
+
+```{r}
+word_cor %>% 
+  filter(item1 == "weapons")
+
+```
+
+******
+Vediamo lo stesso risultato anche per altre parole.
+
+```{r}
+word_cor %>%
+  filter(item1 %in% c("putin", "zelensky", "kremlin", "tanks", "russians", "sanctions")) %>%
+  group_by(item1) %>%
+  slice_max(correlation, n = 6) %>%
+  ungroup() %>%
+  mutate(item2 = reorder(item2, correlation)) %>%
+  ggplot(aes(item2, correlation)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~item1, scales = "free") +
+  coord_flip()
+
+```
+
+Segue anche il grafo delle correlazioni. Valori di correlazione più alti sono indicati da un valore alto dell'attributo *edge_alpha*.
+
+```{r}
+set.seed(927)
+
+word_cor %>%
+  filter(correlation > 0.95) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
